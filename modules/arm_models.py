@@ -1,10 +1,9 @@
-from math import sin, cos, tan, acos, atan, asin, sqrt
+from math import sqrt, sin, cos, atan, atan2, degrees, pi
 import numpy as np
 from matplotlib.figure import Figure
 from helper_fcns.utils import EndEffector, rotm_to_euler
 
 PI = 3.1415926535897932384
-np.set_printoptions(precision=3)
 
 
 class Robot:
@@ -48,12 +47,15 @@ class Robot:
             self.num_joints = 5
             self.ee_coordinates = ["X", "Y", "Z", "RotX", "RotY", "RotZ"]
             self.robot = FiveDOFRobot()
-
-        self.origin = [0.0, 0.0, 0.0]
-        self.axes_length = 0.075
+        
+        self.origin = [0., 0., 0.]
+        self.axes_length = 0.04
         self.point_x, self.point_y, self.point_z = [], [], []
+        self.waypoint_x, self.waypoint_y, self.waypoint_z = [], [], []
+        self.waypoint_rotx, self.waypoint_roty, self.waypoint_rotz = [], [], []
+        self.theta_traj = [] # stored trajectory
         self.show_animation = show_animation
-        self.plot_limits = [0.75, 0.75, 1.0]
+        self.plot_limits = [0.65, 0.65, 0.8]
 
         if self.show_animation:
             self.fig = Figure(figsize=(12, 10), dpi=100)
@@ -82,8 +84,8 @@ class Robot:
             if not numerical:
                 self.robot.calc_inverse_kinematics(pose, soln=soln)
             else:
-                self.robot.calc_numerical_ik(pose, tol=0.02, ilimit=50)
-        elif angles is not None:  # Forward kinematics case
+                self.robot.calc_numerical_ik(pose)
+        elif angles is not None: # Forward kinematics case
             self.robot.calc_forward_kinematics(angles, radians=False)
         else:
             return
@@ -166,6 +168,61 @@ class Robot:
                 [point[0], point[0]], [point[2], 0.0], "b--", linewidth=line_width
             )  # Z line
 
+    def plot_waypoints(self):
+        """
+        Plots the waypoints in the 3D visualization
+        """
+        # draw the points
+        self.sub1.plot(self.waypoint_x, self.waypoint_y, self.waypoint_z, 'or', markersize=8)
+
+
+    def plot_ee_trajectory(self):
+        """TBA
+        """
+        xlist, ylist, zlist = [], [], []
+
+        for th in self.theta_traj:
+            ee_position = self.robot.solve_forward_kinematics(th, radians=True)
+            xlist.append(ee_position[0])
+            ylist.append(ee_position[1])
+            zlist.append(ee_position[2])
+
+        # draw the points
+        self.sub1.plot(xlist, ylist, zlist, 'bo', markersize=2)
+
+
+    def update_ee_trajectory(self):
+        self.theta_traj.append(self.robot.theta) # add the latest thetalist
+
+
+    def reset_ee_trajectory(self):
+        self.theta_traj = []
+
+    
+    def solve_inverse_kinematics(self, pose: EndEffector, soln=0):
+        return self.robot.solve_inverse_kinematics(pose)
+    
+
+    def update_waypoints(self, waypoints: list):
+        """
+        Updates the waypoints into a member variable
+        """
+        for i in range(len(waypoints)):
+            self.waypoint_x.append(waypoints[i][0])
+            self.waypoint_y.append(waypoints[i][1])
+            self.waypoint_z.append(waypoints[i][2])
+            # self.waypoint_rotx.append(waypoints[i][3])
+            # self.waypoint_roty.append(waypoints[i][4])
+            # self.waypoint_rotz.append(waypoints[i][5])
+
+
+    def get_waypoints(self):
+        return [
+            [self.waypoint_x[0], self.waypoint_y[0], self.waypoint_z[0]],
+            [self.waypoint_x[1], self.waypoint_y[1], self.waypoint_z[1]]
+        ]
+    
+
     def plot_3D(self):
         """
         Plots the 3D visualization of the robot, including the robot's links, end-effector, and reference frames.
@@ -183,17 +240,16 @@ class Robot:
 
         # draw the points
         for i in range(len(self.robot.points)):
-            self.point_x.append(self.robot.points[i][0])
-            self.point_y.append(self.robot.points[i][1])
-            self.point_z.append(self.robot.points[i][2])
-        self.sub1.plot(
-            self.point_x,
-            self.point_y,
-            self.point_z,
-            marker="o",
-            markerfacecolor="m",
-            markersize=12,
-        )
+            self.point_x.append(float(self.robot.points[i][0]))
+            self.point_y.append(float(self.robot.points[i][1]))
+            self.point_z.append(float(self.robot.points[i][2]))
+        self.sub1.plot(self.point_x, self.point_y, self.point_z, marker='o', markerfacecolor='m', markersize=12)
+
+        # draw the waypoints
+        self.plot_waypoints()
+
+        # draw the EE trajectory
+        self.plot_ee_trajectory()
 
         # draw the EE
         self.sub1.plot(EE.x, EE.y, EE.z, "bo")
@@ -222,12 +278,12 @@ class Robot:
 
         # add text at bottom of window
         pose_text = "End-effector Pose:      [ "
-        pose_text += f"X: {round(EE.x,2)},  "
-        pose_text += f"Y: {round(EE.y,2)},  "
-        pose_text += f"Z: {round(EE.z,2)},  "
-        pose_text += f"RotX: {round(EE.rotx,2)},  "
-        pose_text += f"RotY: {round(EE.roty,2)},  "
-        pose_text += f"RotZ: {round(EE.rotz,2)}  "
+        pose_text += f"X: {round(EE.x,4)},  "
+        pose_text += f"Y: {round(EE.y,4)},  "
+        pose_text += f"Z: {round(EE.z,4)},  "
+        pose_text += f"RotX: {round(EE.rotx,4)},  "
+        pose_text += f"RotY: {round(EE.roty,4)},  "
+        pose_text += f"RotZ: {round(EE.rotz,4)}  "
         pose_text += " ]"
 
         theta_text = "Joint Positions (deg/m):     ["
@@ -236,9 +292,7 @@ class Robot:
         theta_text += " ]"
 
         textstr = pose_text + "\n" + theta_text
-        self.sub1.text2D(
-            0.3, 0.02, textstr, fontsize=13, transform=self.fig.transFigure
-        )
+        self.sub1.text2D(0.2, 0.02, textstr, fontsize=13, transform=self.fig.transFigure)
 
         self.sub1.set_xlim(-self.plot_limits[0], self.plot_limits[0])
         self.sub1.set_ylim(-self.plot_limits[1], self.plot_limits[1])
@@ -676,8 +730,9 @@ class FiveDOFRobot:
     def __init__(self):
         """Initialize the robot parameters and joint limits."""
         # Link lengths
-        self.l1, self.l2, self.l3, self.l4, self.l5 = 0.30, 0.15, 0.18, 0.15, 0.12
-
+        # self.l1, self.l2, self.l3, self.l4, self.l5 = 0.30, 0.15, 0.18, 0.15, 0.12
+        self.l1, self.l2, self.l3, self.l4, self.l5 = 0.155, 0.099, 0.095, 0.055, 0.105 # from hardware measurements
+        
         # Joint angles (initialized to zero)
         self.theta = [0, 0, 0, 0, 0]
 
@@ -690,6 +745,14 @@ class FiveDOFRobot:
             [-np.pi, np.pi],
         ]
 
+        self.thetadot_limits = [
+            [-np.pi*2, np.pi*2], 
+            [-np.pi*2, np.pi*2], 
+            [-np.pi*2, np.pi*2], 
+            [-np.pi*2, np.pi*2], 
+            [-np.pi*2, np.pi*2]
+        ]
+        
         # End-effector object
         self.ee = EndEffector()
 
@@ -764,6 +827,17 @@ class FiveDOFRobot:
         # Recompute robot points based on updated joint angles
         self.calc_forward_kinematics(self.theta, radians=True)
 
+
+    def solve_inverse_kinematics(self, EE: EndEffector, tol=1e-3, ilimit=500):
+        """ Calculate numerical inverse kinematics based on input coordinates. """
+
+        ########################################
+
+        # insert your code here
+
+        ########################################
+
+    
     def calc_robot_points(self):
         """Calculates the main arm points using the current joint angles"""
 
@@ -790,7 +864,7 @@ class FiveDOFRobot:
 
         # Extract and assign the RPY (roll, pitch, yaw) from the rotation matrix
         rpy = rotm_to_euler(self.T_ee[:3, :3])
-        self.ee.rotx, self.ee.roty, self.ee.rotz = rpy[2], rpy[1], rpy[0]
+        self.ee.rotx, self.ee.roty, self.ee.rotz = rpy[0], rpy[1], rpy[2]
 
         # Calculate the EE axes in space (in the base frame)
         self.EE = [self.ee.x, self.ee.y, self.ee.z]
